@@ -1,8 +1,10 @@
+import math
+import time
+
 import cv2
 import mediapipe as mp
-import math
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 from constants import *
 
@@ -19,6 +21,8 @@ volume = interface.QueryInterface(IAudioEndpointVolume)
 volume.SetMasterVolumeLevelScalar(INITIAL_VOLUME / 100, None)
 
 new_vol = None
+
+isVolumeControllerOn = False
 
 cap = cv2.VideoCapture(0)
 
@@ -51,33 +55,50 @@ while cap.isOpened():
         handLabel = results.multi_handedness[0].classification[0].label
 
         if handLabel == 'Right':
-            # Extract coordinates of the middle fingertip and MCP joint.
-            middle_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
-            middle_finger_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
+            # Extract coordinates of the index and thumb fingertips.
+            indexFingerTip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            thumbTip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
 
-            # Calculate the angle between the middle finger line and the y-axis.
-            dx = middle_finger_mcp.x - middle_finger_tip.x
-            dy = middle_finger_mcp.y - middle_finger_tip.y
+            # Calculate the euclidean distance between the index finger and the thumb.
+            dx = indexFingerTip.x - thumbTip.x
+            dy = indexFingerTip.y - thumbTip.y
 
-            angle_rad = math.atan2(dx, dy)
-            angle_deg = math.degrees(angle_rad)
+            distanceBetweenIndexAndThumb = math.hypot(dx, dy)
 
-            # Invert the angles, to accommodate for the inversion of the axes in openCV
-            angle_deg *= -1
+            if distanceBetweenIndexAndThumb <= DISTANCE_OFFSET:
+                # Toggle the boolean variable on/off
+                isVolumeControllerOn = not isVolumeControllerOn
 
-            # Normalize angle to the range [-90, 90]
-            if -90 <= angle_deg <= 90:
-                # Map angle to volume range.
-                new_vol = (angle_deg + 90) / 180 * MAX_VOLUME
+                time.sleep(1)
 
-                # Update the system volume based on the calculated angle.
-                volume.SetMasterVolumeLevelScalar(new_vol / 100, None)
+            if isVolumeControllerOn:
+                # Extract coordinates of the middle fingertip and MCP joint.
+                middle_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+                middle_finger_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
 
-            if TESTING:
-                current_vol = round(volume.GetMasterVolumeLevelScalar() * 100)
+                # Calculate the angle between the middle finger line and the y-axis.
+                dx = middle_finger_mcp.x - middle_finger_tip.x
+                dy = middle_finger_mcp.y - middle_finger_tip.y
 
-                # Put the text on the image
-                cv2.putText(image, f"Volume: {str(current_vol)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                angle_rad = math.atan2(dx, dy)
+                angle_deg = math.degrees(angle_rad)
+
+                # Invert the angles, to accommodate for the inversion of the axes in openCV
+                angle_deg *= -1
+
+                # Limit the angle's range to [-90, 90]
+                if -90 <= angle_deg <= 90:
+                    # Map angle to volume range.
+                    new_vol = (angle_deg + 90) / 180 * MAX_VOLUME
+
+                    # Update the system volume based on the calculated angle.
+                    volume.SetMasterVolumeLevelScalar(new_vol / 100, None)
+
+                if TESTING:
+                    current_vol = round(volume.GetMasterVolumeLevelScalar() * 100)
+
+                    # Put the text on the image
+                    cv2.putText(image, f"Volume: {str(current_vol)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     if TESTING:
         # Display the image.

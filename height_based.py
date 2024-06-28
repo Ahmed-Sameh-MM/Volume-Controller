@@ -84,7 +84,7 @@ while cap.isOpened():
                 current_vol = round(volume.GetMasterVolumeLevelScalar() * 100)
 
                 # Put the text on the image
-                cv2.putText(image, f"Volume: {str(current_vol)}", (100, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                cv2.putText(image, f"Volume: {str(current_vol)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     if TESTING:
         # Display the image.
