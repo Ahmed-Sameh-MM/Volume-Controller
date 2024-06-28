@@ -7,6 +7,7 @@ from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 from constants import *
+from mode import Mode
 
 # Initialize MediaPipe Hands.
 mp_hands = mp.solutions.hands
@@ -22,7 +23,7 @@ volume.SetMasterVolumeLevelScalar(INITIAL_VOLUME / 100, None)
 
 new_vol = None
 
-isVolumeControllerOn = False
+mode: Mode = None
 
 cap = cv2.VideoCapture(0)
 
@@ -54,24 +55,45 @@ while cap.isOpened():
 
         handLabel = results.multi_handedness[0].classification[0].label
 
-        if handLabel == 'Right':
-            # Extract coordinates of the index and thumb fingertips.
-            indexFingerTip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+        if TESTING and handLabel == 'Right' or (not TESTING) and handLabel == 'Left':
+            # Extract coordinates of all fingertips.
             thumbTip = hand_landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
+            indexFingerTip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+            middleFingerTip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
+            ringFingerTip = hand_landmarks.landmark[mp_hands.HandLandmark.RING_FINGER_TIP]
+            pinkyTip = hand_landmarks.landmark[mp_hands.HandLandmark.PINKY_TIP]
 
-            # Calculate the euclidean distance between the index finger and the thumb.
+            # Calculate the euclidean distance between the index finger and the thumb. (Mode 1)
             dx = indexFingerTip.x - thumbTip.x
             dy = indexFingerTip.y - thumbTip.y
-
             distanceBetweenIndexAndThumb = math.hypot(dx, dy)
 
+            # Calculate the euclidean distance between the middle finger and the thumb. (Mode 2)
+            dx = middleFingerTip.x - thumbTip.x
+            dy = middleFingerTip.y - thumbTip.y
+            distanceBetweenMiddleAndThumb = math.hypot(dx, dy)
+
             if distanceBetweenIndexAndThumb <= DISTANCE_OFFSET:
-                # Toggle the boolean variable on/off
-                isVolumeControllerOn = not isVolumeControllerOn
+                # Toggle the mode variable
+                if mode is None:
+                    mode = Mode.VOLUME_MODE
+
+                else:
+                    mode = None
 
                 time.sleep(1)
 
-            if isVolumeControllerOn:
+            elif distanceBetweenMiddleAndThumb <= DISTANCE_OFFSET:
+                # Toggle the mode variable
+                if mode is None:
+                    mode = Mode.MOUSE_NAVIGATION_MODE
+
+                else:
+                    mode = None
+
+                time.sleep(1)
+
+            if mode == Mode.VOLUME_MODE:
                 # Extract coordinates of the middle fingertip and MCP joint.
                 middle_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
                 middle_finger_mcp = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_MCP]
@@ -83,13 +105,14 @@ while cap.isOpened():
                 angle_rad = math.atan2(dx, dy)
                 angle_deg = math.degrees(angle_rad)
 
-                # Invert the angles, to accommodate for the inversion of the axes in openCV
-                angle_deg *= -1
+                if TESTING:
+                    # Invert the angles, to accommodate for the horizontal flip of the image
+                    angle_deg *= -1
 
-                # Limit the angle's range to [-90, 90]
-                if -90 <= angle_deg <= 90:
+                # Bound the angle's range from -ve rotation offset to +ve rotation offset
+                if -ROTATION_ANGLE_OFFSET <= angle_deg <= ROTATION_ANGLE_OFFSET:
                     # Map angle to volume range.
-                    new_vol = (angle_deg + 90) / 180 * MAX_VOLUME
+                    new_vol = (angle_deg + ROTATION_ANGLE_OFFSET) / (ROTATION_ANGLE_OFFSET * 2) * MAX_VOLUME
 
                     # Update the system volume based on the calculated angle.
                     volume.SetMasterVolumeLevelScalar(new_vol / 100, None)
@@ -99,6 +122,9 @@ while cap.isOpened():
 
                     # Put the text on the image
                     cv2.putText(image, f"Volume: {str(current_vol)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+            elif mode == Mode.MOUSE_NAVIGATION_MODE:
+                pointer = indexFingerTip.y
 
     if TESTING:
         # Display the image.
