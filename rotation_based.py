@@ -3,27 +3,29 @@ import time
 
 import cv2
 import mediapipe as mp
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
+# Project Imports (My own files)
 from constants import *
 from mode import Mode
+from audio import Audio
+from mouse import Mouse
 
 # Initialize MediaPipe Hands.
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1)
 mp_drawing = mp.solutions.drawing_utils
 
-# Initialize Pycaw for volume control.
-devices = AudioUtilities.GetSpeakers()
-interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-volume = interface.QueryInterface(IAudioEndpointVolume)
+audio = Audio()
 
-volume.SetMasterVolumeLevelScalar(INITIAL_VOLUME / 100, None)
+audio.set_volume(value=INITIAL_VOLUME / 100)
 
 new_vol = None
 
 mode: Mode = None
+
+previous_y = None
+
+mouse = Mouse()
 
 cap = cv2.VideoCapture(0)
 
@@ -68,7 +70,12 @@ while cap.isOpened():
             dy = indexFingerTip.y - thumbTip.y
             distanceBetweenIndexAndThumb = math.hypot(dx, dy)
 
-            # Calculate the euclidean distance between the middle finger and the thumb. (Mode 2)
+            # Calculate the euclidean distance between the ring finger and the thumb. (Mode 2)
+            dx = ringFingerTip.x - thumbTip.x
+            dy = ringFingerTip.y - thumbTip.y
+            distanceBetweenRingAndThumb = math.hypot(dx, dy)
+
+            # Calculate the euclidean distance between the middle finger and the thumb.
             dx = middleFingerTip.x - thumbTip.x
             dy = middleFingerTip.y - thumbTip.y
             distanceBetweenMiddleAndThumb = math.hypot(dx, dy)
@@ -77,21 +84,21 @@ while cap.isOpened():
                 # Toggle the mode variable
                 if mode is None:
                     mode = Mode.VOLUME_MODE
+                    time.sleep(1)
 
-                else:
+                elif mode == Mode.VOLUME_MODE:
                     mode = None
+                    time.sleep(1)
 
-                time.sleep(1)
-
-            elif distanceBetweenMiddleAndThumb <= DISTANCE_OFFSET:
+            elif distanceBetweenRingAndThumb <= DISTANCE_OFFSET:
                 # Toggle the mode variable
                 if mode is None:
                     mode = Mode.MOUSE_NAVIGATION_MODE
+                    time.sleep(1)
 
-                else:
+                elif mode == Mode.MOUSE_NAVIGATION_MODE:
                     mode = None
-
-                time.sleep(1)
+                    time.sleep(1)
 
             if mode == Mode.VOLUME_MODE:
                 # Extract coordinates of the middle fingertip and MCP joint.
@@ -115,16 +122,38 @@ while cap.isOpened():
                     new_vol = (angle_deg + ROTATION_ANGLE_OFFSET) / (ROTATION_ANGLE_OFFSET * 2) * MAX_VOLUME
 
                     # Update the system volume based on the calculated angle.
-                    volume.SetMasterVolumeLevelScalar(new_vol / 100, None)
+                    audio.set_volume(value=new_vol / 100)
 
                 if TESTING:
-                    current_vol = round(volume.GetMasterVolumeLevelScalar() * 100)
+                    current_vol = audio.get_volume()
 
                     # Put the text on the image
                     cv2.putText(image, f"Volume: {str(current_vol)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
             elif mode == Mode.MOUSE_NAVIGATION_MODE:
-                pointer = indexFingerTip.y
+                if distanceBetweenIndexAndThumb <= DISTANCE_OFFSET:
+                    if previous_y is None:
+                        previous_y = indexFingerTip.y * image.shape[0]
+
+                    # Use the y-coordinate of the index fingertip as a reference, as the two fingertips are very close.
+                    current_y = indexFingerTip.y * image.shape[0]  # Scale to image height
+
+                    y_diff = current_y - previous_y
+
+                    mouse.scroll(distance=y_diff)
+
+                    mouse.move(finger_tip=indexFingerTip)
+
+                    previous_y = current_y
+
+                elif distanceBetweenMiddleAndThumb <= DISTANCE_OFFSET:
+                    mouse.click()
+
+                else:
+                    mouse.move(finger_tip=indexFingerTip)
+
+                    if previous_y is not None:
+                        previous_y = None
 
     if TESTING:
         # Display the image.

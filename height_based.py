@@ -1,21 +1,17 @@
 import cv2
 import mediapipe as mp
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-from comtypes import CLSCTX_ALL
 
 from constants import *
+from audio import Audio
 
 # Initialize MediaPipe Hands.
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(max_num_hands=1)
 mp_drawing = mp.solutions.drawing_utils
 
-# Initialize Pycaw for volume control.
-devices = AudioUtilities.GetSpeakers()
-interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-volume = interface.QueryInterface(IAudioEndpointVolume)
+audio = Audio()
 
-volume.SetMasterVolumeLevelScalar(INITIAL_VOLUME / 100, None)
+audio.set_volume(value=INITIAL_VOLUME / 100)
 
 # Variables to store the y-coordinate of half of the screen height.
 initial_y = None
@@ -78,10 +74,10 @@ while cap.isOpened():
                 new_vol = min(INITIAL_VOLUME + round(abs(y_diff)/max_division_offset), MAX_VOLUME)
 
             # Update the system volume based on the direction of finger movement.
-            volume.SetMasterVolumeLevelScalar(new_vol / 100, None)
+            audio.set_volume(value=new_vol / 100)
 
             if TESTING:
-                current_vol = round(volume.GetMasterVolumeLevelScalar() * 100)
+                current_vol = audio.get_volume()
 
                 # Put the text on the image
                 cv2.putText(image, f"Volume: {str(current_vol)}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
